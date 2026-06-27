@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="referrer" content="no-referrer-when-downgrade" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>M365 Licensing Dashboard</title>
+  <script src="https://unpkg.com/@azure/msal-browser@3.10.0/lib/msal-browser.umd.js"></script>
+  <script src="https://unpkg.com/chart.js@4.4.1/dist/chart.umd.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f8f9fb;
+      --surface: #ffffff;
+      --surface2: #f1f3f6;
+      --border: rgba(0,0,0,0.08);
+      --border-strong: rgba(0,0,0,0.14);
+      --text: #111;
+      --text2: #555;
+      --text3: #888;
+      --blue: #185FA5;
+      --blue-light: #E6F1FB;
+      --blue-mid: #378ADD;
+      --green: #3B6D11;
+      --green-light: #EAF3DE;
+      --green-mid: #97C459;
+      --amber: #854F0B;
+      --amber-light: #FAEEDA;
+      --amber-mid: #EF9F27;
+      --red: #A32D2D;
+      --red-light: #FCEBEB;
+      --red-mid: #E24B4A;
+      --radius: 10px;
+      --radius-sm: 6px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111214;
+        --surface: #1c1e22;
+        --surface2: #26282e;
+        --border: rgba(255,255,255,0.08);
+        --border-strong: rgba(255,255,255,0.14);
+        --text: #f0f0f0;
+        --text2: #aaa;
+        --text3: #666;
+        --blue-light: #0C447C;
+        --green-light: #27500A;
+        --amber-light: #633806;
+        --red-light: #791F1F;
+      }
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 0.5px solid var(--border-strong);
+      padding: 0 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 56px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 500;
+      font-size: 15px;
+    }
+
+    .logo-icon {
+      width: 28px;
+      height: 28px;
+      background: var(--blue-mid);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .logo-icon svg { width: 16px; height: 16px; fill: white; }
+
+    .header-right { display: flex; align-items: center; gap: 12px; }
+
+    .btn {
+      padding: 7px 16px;
+      border-radius: var(--radius-sm);
+      border: 0.5px solid var(--border-strong);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s;
+    }
+    .btn:hover { background: var(--surface2); }
+    .btn-primary { background: var(--blue-mid); color: white; border-color: var(--blue-mid); }
+    .btn-primary:hover { background: var(--blue); border-color: var(--blue); }
+
+    .status-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--text3);
+      display: inline-block;
+    }
+    .status-dot.connected { background: var(--green-mid); }
+
+    main { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+
+    /* Config Panel */
+    #config-panel {
+      background: var(--surface);
+      border: 0.5px solid var(--border-strong);
+      border-radius: var(--radius);
+      padding: 2rem;
+      max-width: 520px;
+      margin: 4rem auto;
+    }
+    #config-panel h2 { font-size: 18px; font-weight: 500; margin-bottom: 6px; }
+    #config-panel p { color: var(--text2); font-size: 13px; margin-bottom: 1.5rem; line-height: 1.6; }
+    .field { margin-bottom: 1rem; }
+    .field label { display: block; font-size: 12px; font-weight: 500; color: var(--text2); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .field input {
+      width: 100%;
+      padding: 8px 12px;
+      border: 0.5px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 13px;
+      font-family: monospace;
+    }
+    .field input:focus { outline: none; border-color: var(--blue-mid); box-shadow: 0 0 0 3px rgba(55,138,221,0.15); }
+    .help-link { font-size: 12px; color: var(--blue-mid); text-decoration: none; }
+    .help-link:hover { text-decoration: underline; }
+    #config-error { color: var(--red); font-size: 13px; margin-top: 12px; display: none; }
+
+    /* Dashboard */
+    #dashboard { display: none; }
+
+    .section-label {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text3);
+      margin-bottom: 12px;
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+      margin-bottom: 2rem;
+    }
+
+    .kpi {
+      background: var(--surface2);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+    }
+    .kpi-label { font-size: 12px; color: var(--text2); margin-bottom: 4px; }
+    .kpi-value { font-size: 26px; font-weight: 500; line-height: 1; color: var(--text); }
+    .kpi-sub { font-size: 12px; color: var(--text3); margin-top: 4px; }
+    .kpi-value.blue { color: var(--blue-mid); }
+    .kpi-value.green { color: var(--green); }
+    .kpi-value.amber { color: var(--amber); }
+    .kpi-value.red { color: var(--red); }
+
+    .license-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+      margin-bottom: 2rem;
+    }
+
+    .lic-card {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem 1.25rem;
+    }
+
+    .lic-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      gap: 8px;
+    }
+    .lic-name { font-size: 13px; font-weight: 500; color: var(--text); line-height: 1.3; }
+    .lic-sku { font-size: 11px; color: var(--text3); margin-top: 2px; font-family: monospace; }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 500;
+      padding: 2px 8px;
+      border-radius: 20px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .badge-ok { background: var(--green-light); color: var(--green); }
+    .badge-low { background: var(--amber-light); color: var(--amber); }
+    .badge-critical { background: var(--red-light); color: var(--red); }
+    .badge-full { background: var(--red-light); color: var(--red); }
+
+    .lic-counts {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .count-box-label { font-size: 11px; color: var(--text3); margin-bottom: 2px; }
+    .count-box-val { font-size: 18px; font-weight: 500; color: var(--text); }
+    .count-box-val.assigned { color: var(--blue-mid); }
+    .count-box-val.available { color: var(--green); }
+
+    .bar-track {
+      background: var(--surface2);
+      border-radius: 4px;
+      height: 5px;
+      overflow: hidden;
+    }
+    .bar-fill { height: 100%; border-radius: 4px; }
+    .bar-meta {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 5px;
+      font-size: 11px;
+      color: var(--text3);
+    }
+
+    .chart-card {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .chart-legend {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 14px;
+      font-size: 12px;
+      color: var(--text2);
+    }
+    .legend-sq {
+      width: 10px; height: 10px;
+      border-radius: 2px;
+      display: inline-block;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+
+    /* Loading state */
+    #loading {
+      display: none;
+      text-align: center;
+      padding: 4rem 2rem;
+      color: var(--text2);
+    }
+    .spinner {
+      width: 32px; height: 32px;
+      border: 2px solid var(--border-strong);
+      border-top-color: var(--blue-mid);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin: 0 auto 1rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .last-updated { font-size: 12px; color: var(--text3); }
+
+    .refresh-btn svg { width: 14px; height: 14px; }
+
+    /* Filter bar */
+    .filter-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+    .filter-btn {
+      padding: 4px 12px;
+      border-radius: 20px;
+      border: 0.5px solid var(--border-strong);
+      background: transparent;
+      color: var(--text2);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.1s;
+    }
+    .filter-btn:hover, .filter-btn.active {
+      background: var(--blue-light);
+      color: var(--blue);
+      border-color: var(--blue-mid);
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 16 16"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+    </div>
+    M365 Licensing Dashboard
+  </div>
+  <div class="header-right">
+    <span id="conn-status" style="font-size:12px; color:var(--text3); display:flex; align-items:center; gap:5px;">
+      <span class="status-dot" id="status-dot"></span>
+      <span id="status-label">Not connected</span>
+    </span>
+    <button class="btn" id="refresh-btn" onclick="refreshData()" style="display:none">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13.5 8A5.5 5.5 0 1 1 8 2.5"/><path d="M11 1l2.5 1.5L11 4"/></svg>
+      Refresh
+    </button>
+    <button class="btn btn-primary" id="sign-btn" onclick="handleAuth()">Sign in</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- Config Panel -->
+  <div id="config-panel">
+    <h2>Connect to Microsoft Graph</h2>
+    <p>Enter your Azure AD App Registration details to pull live license data from your tenant. Your credentials are never sent anywhere — authentication happens directly with Microsoft.</p>
+    <div id="embedded-config-notice" style="background:var(--color-background-secondary); border-left:3px solid var(--blue-mid); padding:10px 12px; border-radius:4px; margin-bottom:1rem; font-size:13px; display:none;">
+      <strong style="color:var(--blue-mid)">📌 Using embedded credentials</strong><br>
+      Your app details are configured in the file. Click <strong>Connect & Sign in</strong> to authenticate. To use different credentials, <a href="javascript:clearEmbeddedConfig()" style="color:var(--blue-mid); text-decoration:underline">click here</a>.
+    </div>
+    <div class="field">
+      <label>Tenant ID</label>
+      <input type="text" id="tenantId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+    </div>
+    <div class="field">
+      <label>Client ID (Application ID)</label>
+      <input type="text" id="clientId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+    </div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:1.5rem;">
+      <a class="help-link" href="https://learn.microsoft.com/en-us/azure/active-directory/develop/quickstart-register-app" target="_blank">How to register an app ↗</a>
+      <button class="btn btn-primary" onclick="initMsal()">Connect &amp; Sign in</button>
+    </div>
+    <div id="config-error"></div>
+  </div>
+
+  <!-- Loading -->
+  <div id="loading">
+    <div class="spinner"></div>
+    <p>Fetching license data from Microsoft Graph...</p>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dashboard">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1.5rem;">
+      <p class="section-label" style="margin:0">M365 Licensing — Executive Summary</p>
+      <span class="last-updated" id="last-updated"></span>
+    </div>
+
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+      <p class="section-label" style="margin:0">License breakdown by SKU</p>
+      <div class="filter-bar" id="filter-bar" style="margin:0"></div>
+    </div>
+
+    <div class="license-grid" id="lic-grid"></div>
+
+    <p class="section-label">Utilization overview</p>
+    <div class="chart-card">
+      <div class="chart-legend">
+        <span><span class="legend-sq" style="background:#378ADD"></span>Assigned</span>
+        <span><span class="legend-sq" style="background:#97C459"></span>Available</span>
+      </div>
+      <div style="position:relative; width:100%; height:300px;">
+        <canvas id="overviewChart" role="img" aria-label="Stacked bar chart showing assigned versus available M365 licenses per SKU">License utilization per SKU.</canvas>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// Wait for MSAL to be available
+// ============ CONFIGURATION ============
+// Edit these values with your Azure AD app details
+// If both are filled, the dashboard will auto-authenticate on load
+const APP_CONFIG = {
+  TENANT_ID: '2554d8b5-9d5b-42ce-b9b4-65261161da0c',      // Your Azure AD Tenant ID - paste here
+  CLIENT_ID: '4cb4974d-224f-4d1e-80b5-21090a1b0a93'
+};
+// ======================================
+
+let waitAttempts = 0;
+const waitForMsal = setInterval(() => {
+  if (typeof msal !== 'undefined') {
+    clearInterval(waitForMsal);
+    console.log('MSAL library loaded');
+  } else if (++waitAttempts > 50) {
+    clearInterval(waitForMsal);
+    console.error('MSAL failed to load from CDN');
+  }
+}, 100);
+
+let msalInstance = null;
+
+let appConfig = { tenantId: null, clientId: null };
+
+async function checkRedirectOnLoad() {
+  // First try to use embedded config
+  if (APP_CONFIG.TENANT_ID && APP_CONFIG.CLIENT_ID) {
+    appConfig.tenantId = APP_CONFIG.TENANT_ID;
+    appConfig.clientId = APP_CONFIG.CLIENT_ID;
+    document.getElementById('tenantId').value = APP_CONFIG.TENANT_ID;
+    document.getElementById('clientId').value = APP_CONFIG.CLIENT_ID;
+    document.getElementById('embedded-config-notice').style.display = 'block';
+  } else if (!appConfig.tenantId || !appConfig.clientId) {
+    return;
+  }
+  
+  const tenantId = appConfig.tenantId;
+  const clientId = appConfig.clientId;
+  const msalConfig = {
+    auth: {
+      clientId,
+      authority: `https://login.microsoftonline.com/${tenantId}`,
+      redirectUri: (window.location.origin + window.location.pathname).split('?')[0].split('#')[0],
+      navigateToLoginRequestUrl: true,
+    },
+    cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: false }
+  };
+  try {
+    msalInstance = new msal.PublicClientApplication(msalConfig);
+    await msalInstance.initialize();
+    const result = await msalInstance.handleRedirectPromise();
+    if (result && result.account) {
+      msalInstance.setActiveAccount(result.account);
+      document.getElementById('config-panel').style.display = 'none';
+      document.getElementById('tenantId').value = tenantId;
+      document.getElementById('clientId').value = clientId;
+      await loadData();
+    } else {
+      const accounts = msalInstance.getAllAccounts();
+      if (accounts.length > 0) {
+        msalInstance.setActiveAccount(accounts[0]);
+        document.getElementById('config-panel').style.display = 'none';
+        await loadData();
+      }
+    }
+  } catch(e) {
+    console.error('Redirect check failed:', e);
+  }
+}
+window.addEventListener('load', async () => {
+  await checkRedirectOnLoad();
+  
+  // Auto-connect if credentials are embedded in APP_CONFIG
+  if (APP_CONFIG.TENANT_ID && APP_CONFIG.CLIENT_ID) {
+    console.log('Auto-connecting with embedded credentials...');
+    setTimeout(() => initMsal(), 500); // Small delay to ensure DOM is ready
+  }
+});
+let chartInstance = null;
+let allLicenses = [];
+let activeFilter = 'All';
+
+const SKU_FRIENDLY = {
+  'SPE_E3': 'Microsoft 365 E3',
+  'SPE_E5': 'Microsoft 365 E5',
+  'SPE_F1': 'Microsoft 365 F1',
+  'SPE_F3': 'Microsoft 365 F3',
+  'O365_BUSINESS_PREMIUM': 'Microsoft 365 Business Premium',
+  'SMB_BUSINESS_PREMIUM': 'Microsoft 365 Business Premium',
+  'O365_BUSINESS': 'Microsoft 365 Business Basic',
+  'O365_BUSINESS_ESSENTIALS': 'Microsoft 365 Business Basic',
+  'STANDARDPACK': 'Office 365 E1',
+  'ENTERPRISEPACK': 'Office 365 E3',
+  'ENTERPRISEPREMIUM': 'Office 365 E5',
+  'DESKLESSPACK': 'Office 365 F3',
+  'FLOW_FREE': 'Power Automate Free',
+  'POWER_BI_PRO': 'Power BI Pro',
+  'POWER_BI_PREMIUM_PER_USER': 'Power BI Premium Per User',
+  'TEAMS_EXPLORATORY': 'Microsoft Teams Exploratory',
+  'TEAMS_ESSENTIALS': 'Microsoft Teams Essentials',
+  'Microsoft_Teams_Rooms_Pro': 'Teams Rooms Pro',
+  'PROJECTPREMIUM': 'Project Plan 5',
+  'PROJECTPROFESSIONAL': 'Project Plan 3',
+  'VISIOCLIENT': 'Visio Plan 2',
+  'VISIOONLINE_PLAN1': 'Visio Plan 1',
+  'EMS': 'Enterprise Mobility + Security E3',
+  'EMSPREMIUM': 'Enterprise Mobility + Security E5',
+  'INTUNE_A': 'Microsoft Intune',
+  'AAD_PREMIUM': 'Azure AD Premium P1',
+  'AAD_PREMIUM_P2': 'Azure AD Premium P2',
+  'EXCHANGESTANDARD': 'Exchange Online Plan 1',
+  'EXCHANGEENTERPRISE': 'Exchange Online Plan 2',
+  'SHAREPOINTSTANDARD': 'SharePoint Online Plan 1',
+  'SHAREPOINTENTERPRISE': 'SharePoint Online Plan 2',
+};
+
+function getCategoryFromSku(skuPartNumber) {
+  const s = skuPartNumber.toUpperCase();
+  if (s.includes('SPE_E') || s.includes('ENTERPRISEPACK') || s.includes('ENTERPRISEPREMIUM') || s.includes('STANDARDPACK')) return 'Enterprise';
+  if (s.includes('F1') || s.includes('F3') || s.includes('DESKLESS')) return 'Frontline';
+  if (s.includes('BUSINESS')) return 'Business';
+  if (s.includes('TEAMS')) return 'Teams';
+  if (s.includes('POWER_BI') || s.includes('FLOW')) return 'Power Platform';
+  if (s.includes('PROJECT')) return 'Project';
+  if (s.includes('VISIO')) return 'Visio';
+  if (s.includes('EXCHANGE')) return 'Exchange';
+  if (s.includes('SHAREPOINT')) return 'SharePoint';
+  if (s.includes('EMS') || s.includes('AAD') || s.includes('INTUNE')) return 'Security & Identity';
+  return 'Other';
+}
+
+function badgeInfo(avail, total) {
+  if (total === 0) return ['badge-ok', 'Unlimited'];
+  const pct = avail / total;
+  if (avail === 0) return ['badge-full', 'No seats left'];
+  if (pct <= 0.03) return ['badge-critical', 'Critical'];
+  if (pct <= 0.10) return ['badge-low', 'Low stock'];
+  return ['badge-ok', 'Healthy'];
+}
+
+function barColor(utilPct) {
+  if (utilPct >= 1) return '#E24B4A';
+  if (utilPct >= 0.90) return '#EF9F27';
+  return '#378ADD';
+}
+
+function friendlyName(skuPartNumber, displayName) {
+  return SKU_FRIENDLY[skuPartNumber] || SKU_FRIENDLY[skuPartNumber.toUpperCase()] || displayName || skuPartNumber;
+}
+
+async function initMsal() {
+  if (typeof msal === 'undefined') {
+    const errEl = document.getElementById('config-error');
+    errEl.innerHTML = '⚠️ MSAL library failed to load from CDN. This may be due to network or firewall restrictions. Try: <br>1. Refresh the page<br>2. Check your network allows access to unpkg.com<br>3. Contact your IT admin if external CDN access is blocked';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const tenantId = document.getElementById('tenantId').value.trim();
+  const clientId = document.getElementById('clientId').value.trim();
+  const errEl = document.getElementById('config-error');
+  errEl.style.display = 'none';
+
+  if (!tenantId || !clientId) {
+    errEl.textContent = 'Please enter both Tenant ID and Client ID.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRe.test(tenantId) || !uuidRe.test(clientId)) {
+    errEl.textContent = 'IDs should be in GUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const msalConfig = {
+    auth: {
+      clientId,
+      authority: `https://login.microsoftonline.com/${tenantId}`,
+      redirectUri: (window.location.origin + window.location.pathname).split('?')[0].split('#')[0],
+      navigateToLoginRequestUrl: true,
+    },
+    cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: false }
+  };
+
+  try {
+    msalInstance = new msal.PublicClientApplication(msalConfig);
+    await msalInstance.initialize();
+    const redirectResult = await msalInstance.handleRedirectPromise();
+    if (redirectResult && redirectResult.account) {
+      msalInstance.setActiveAccount(redirectResult.account);
+      await loadData();
+      return;
+    }
+    await handleAuth();
+  } catch (e) {
+    errEl.textContent = 'Failed to initialize: ' + (e.message || e.toString());
+    errEl.style.display = 'block';
+  }
+}
+
+function clearEmbeddedConfig() {
+  if (confirm('Clear embedded credentials and enter new ones?')) {
+    appConfig.tenantId = null;
+    appConfig.clientId = null;
+    document.getElementById('tenantId').value = '';
+    document.getElementById('clientId').value = '';
+    document.getElementById('embedded-config-notice').style.display = 'none';
+    document.getElementById('tenantId').focus();
+  }
+}
+
+async function handleAuth() {
+  if (!msalInstance) return;
+  
+  const tenantId = document.getElementById('tenantId').value.trim();
+  const clientId = document.getElementById('clientId').value.trim();
+  if (tenantId && clientId) {
+    appConfig.tenantId = tenantId;
+    appConfig.clientId = clientId;
+  }
+
+  const accounts = msalInstance.getAllAccounts();
+  if (accounts.length > 0) {
+    msalInstance.setActiveAccount(accounts[0]);
+    await loadData();
+    return;
+  }
+
+  try {
+    await msalInstance.loginRedirect({
+      scopes: ['https://graph.microsoft.com/Organization.Read.All'],
+      prompt: 'select_account'
+    });
+    return;
+  } catch (e) {
+    if (!e.message.includes('user_cancelled')) {
+      document.getElementById('config-error').textContent = 'Sign-in failed: ' + e.message;
+      document.getElementById('config-error').style.display = 'block';
+    }
+  }
+}
+
+async function getToken() {
+  const account = msalInstance.getActiveAccount();
+  const request = { scopes: ['https://graph.microsoft.com/.default'], account };
+  try {
+    const result = await msalInstance.acquireTokenSilent(request);
+    return result.accessToken;
+  } catch {
+    await msalInstance.acquireTokenRedirect(request);
+    return null;
+  }
+}
+
+async function loadData() {
+  document.getElementById('config-panel').style.display = 'none';
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('dashboard').style.display = 'none';
+
+  try {
+    const token = await getToken();
+
+    let skus = [];
+    let url = 'https://graph.microsoft.com/v1.0/subscribedSkus?$select=skuId,skuPartNumber,capabilityStatus,consumedUnits,prepaidUnits,servicePlans';
+
+    while (url) {
+      const res = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
+      if (!res.ok) throw new Error(`Graph API error: ${res.status} ${res.statusText}`);
+      const data = await res.json();
+      skus = skus.concat(data.value || []);
+      url = data['@odata.nextLink'] || null;
+    }
+
+    allLicenses = skus
+      .filter(s => s.capabilityStatus !== 'Deleted' && s.prepaidUnits.enabled > 0)
+      .map(s => ({
+        name: friendlyName(s.skuPartNumber, s.skuPartNumber),
+        sku: s.skuPartNumber,
+        category: getCategoryFromSku(s.skuPartNumber),
+        total: s.prepaidUnits.enabled,
+        assigned: s.consumedUnits,
+        warning: s.prepaidUnits.warning,
+        suspended: s.prepaidUnits.suspended,
+        status: s.capabilityStatus,
+      }))
+      .sort((a, b) => b.total - a.total);
+
+    const account = msalInstance.getActiveAccount();
+    const userEmail = account?.username || '';
+    document.getElementById('status-dot').className = 'status-dot connected';
+    document.getElementById('status-label').textContent = userEmail ? `Connected as ${userEmail}` : 'Connected';
+    document.getElementById('sign-btn').textContent = 'Sign out';
+    document.getElementById('sign-btn').onclick = signOut;
+    document.getElementById('refresh-btn').style.display = 'flex';
+
+    renderDashboard();
+
+  } catch (e) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('config-panel').style.display = 'block';
+    const errEl = document.getElementById('config-error');
+    errEl.textContent = 'Error fetching data: ' + e.message;
+    errEl.style.display = 'block';
+  }
+}
+
+function renderDashboard() {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+
+  const filtered = activeFilter === 'All'
+    ? allLicenses
+    : allLicenses.filter(l => l.category === activeFilter);
+
+  const totalPurchased = filtered.reduce((s, l) => s + l.total, 0);
+  const totalAssigned = filtered.reduce((s, l) => s + l.assigned, 0);
+  const totalAvail = totalPurchased - totalAssigned;
+  const utilPct = totalPurchased > 0 ? Math.round((totalAssigned / totalPurchased) * 100) : 0;
+  const lowCount = filtered.filter(l => {
+    const a = l.total - l.assigned;
+    return a >= 0 && (a / l.total) <= 0.05 && l.total > 0;
+  }).length;
+
+
+
+  const categories = ['All', ...new Set(allLicenses.map(l => l.category))].sort((a,b) => a === 'All' ? -1 : a.localeCompare(b));
+  document.getElementById('filter-bar').innerHTML = categories.map(c =>
+    `<button class="filter-btn ${c === activeFilter ? 'active' : ''}" onclick="setFilter('${c}')">${c}</button>`
+  ).join('');
+
+  const grid = document.getElementById('lic-grid');
+  grid.innerHTML = '';
+  filtered.forEach(l => {
+    const avail = Math.max(0, l.total - l.assigned);
+    const utilP = l.total > 0 ? Math.min(1, l.assigned / l.total) : 0;
+    const pctDisplay = Math.round(utilP * 100);
+    const [cls, label] = badgeInfo(avail, l.total);
+    const card = document.createElement('div');
+    card.className = 'lic-card';
+    card.innerHTML = `
+      <div class="lic-header">
+        <div>
+          <div class="lic-name">${l.name}</div>
+          <div class="lic-sku">${l.sku} · ${l.category}</div>
+        </div>
+        <span class="badge ${cls}">${label}</span>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px;">
+        <div style="background:var(--blue-light); border-radius:var(--radius-sm); padding:10px 12px;">
+          <div style="font-size:11px; color:var(--blue); font-weight:500; margin-bottom:4px; text-transform:uppercase; letter-spacing:0.05em;">Assigned</div>
+          <div style="font-size:24px; font-weight:500; color:var(--blue-mid); line-height:1;">${l.assigned.toLocaleString()}</div>
+          <div style="font-size:11px; color:var(--blue); margin-top:3px;">${pctDisplay}% of total</div>
+        </div>
+        <div style="background:var(--green-light); border-radius:var(--radius-sm); padding:10px 12px;">
+          <div style="font-size:11px; color:var(--green); font-weight:500; margin-bottom:4px; text-transform:uppercase; letter-spacing:0.05em;">Available</div>
+          <div style="font-size:24px; font-weight:500; color:var(--green); line-height:1;">${avail.toLocaleString()}</div>
+          <div style="font-size:11px; color:var(--green); margin-top:3px;">${100 - pctDisplay}% remaining</div>
+        </div>
+        <div style="background:var(--surface2); border-radius:var(--radius-sm); padding:10px 12px;">
+          <div style="font-size:11px; color:var(--text3); font-weight:500; margin-bottom:4px; text-transform:uppercase; letter-spacing:0.05em;">Total</div>
+          <div style="font-size:24px; font-weight:500; color:var(--text); line-height:1;">${l.total.toLocaleString()}</div>
+          <div style="font-size:11px; color:var(--text3); margin-top:3px;">purchased seats</div>
+        </div>
+      </div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pctDisplay}%; background:${barColor(utilP)};"></div></div>
+      <div class="bar-meta"><span>${pctDisplay}% utilized</span><span>${avail.toLocaleString()} seats free</span></div>
+    `;
+    grid.appendChild(card);
+  });
+
+  const top = filtered.slice(0, 12);
+  const chartLabels = top.map(l => l.sku.length > 14 ? l.sku.substring(0, 14) + '…' : l.sku);
+  const assignedData = top.map(l => l.assigned);
+  const availData = top.map(l => Math.max(0, l.total - l.assigned));
+
+  if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+
+  const canvas = document.getElementById('overviewChart');
+  const wrapH = Math.max(280, top.length * 36 + 80);
+  canvas.parentElement.style.height = wrapH + 'px';
+
+  chartInstance = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: chartLabels,
+      datasets: [
+        { label: 'Assigned', data: assignedData, backgroundColor: '#378ADD', borderRadius: 3, stack: 'a' },
+        { label: 'Available', data: availData, backgroundColor: '#97C459', borderRadius: 3, stack: 'a' }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString()}` } }
+      },
+      scales: {
+        x: { ticks: { autoSkip: false, maxRotation: 35, font: { size: 11 } }, grid: { display: false } },
+        y: { ticks: { callback: v => v.toLocaleString(), font: { size: 11 } }, grid: { color: 'rgba(128,128,128,0.1)' } }
+      }
+    }
+  });
+
+  document.getElementById('last-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+}
+
+function setFilter(cat) {
+  activeFilter = cat;
+  renderDashboard();
+}
+
+async function refreshData() {
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('dashboard').style.display = 'none';
+  await loadData();
+}
+
+async function signOut() {
+  await msalInstance.logoutRedirect();
+  msalInstance = null;
+  allLicenses = [];
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('config-panel').style.display = 'block';
+  document.getElementById('status-dot').className = 'status-dot';
+  document.getElementById('status-label').textContent = 'Not connected';
+  document.getElementById('sign-btn').textContent = 'Sign in';
+  document.getElementById('sign-btn').onclick = handleAuth;
+  document.getElementById('refresh-btn').style.display = 'none';
+}
+</script>
+</body>
+</html>
